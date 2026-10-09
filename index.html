@@ -15,14 +15,18 @@ header{background:#34a98f;color:#fff;padding:calc(14px + env(safe-area-inset-top
 .total{display:flex;gap:10px}.total div{flex:1;text-align:center}
 .total b{display:block;font-size:24px;color:#34a98f;margin-top:4px}
 label{font-size:13px;color:#666;display:block;margin:10px 0 4px}
-input,select{width:100%;font-size:17px;padding:10px;border:1px solid #ccd;border-radius:10px;background:#fff}
-.row{display:flex;gap:10px}.row>div{flex:1}
+input,select{display:block;width:100%;min-width:0;height:46px;margin:0;font-size:17px;line-height:1.2;padding:0 10px;border:1px solid #ccd;border-radius:10px;background:#fff;color:#222;-webkit-appearance:none;appearance:none}
+input[type=date]{text-align:left;-webkit-min-logical-width:0}
+input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
+.row{display:flex;gap:10px}.row>div{flex:1;min-width:0}
 button.main{width:100%;margin-top:14px;padding:13px;font-size:17px;font-weight:700;color:#fff;background:#34a98f;border:0;border-radius:12px}
 .item{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #eee}
 .item:last-child{border:0}
 .item .name{flex:1}.item small{color:#888;display:block}
 .tag{display:inline-block;background:#dff3ee;color:#1f7a67;border-radius:8px;padding:1px 8px;font-size:12px;margin-right:6px}
 .del{border:0;background:none;color:#c44;font-size:20px;padding:4px 8px}
+.buy{border:0;background:#34a98f;color:#fff;font-size:14px;font-weight:700;border-radius:10px;padding:8px 10px;margin-left:6px;white-space:nowrap}
+.undo{border:1px solid #bbb;background:#fff;color:#666;font-size:13px;border-radius:10px;padding:6px 8px;margin-left:6px;white-space:nowrap}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;padding:12px 0;border:0;background:none;font-size:13px;color:#888}
 nav button.active{color:#34a98f;font-weight:700}
@@ -72,6 +76,7 @@ canvas{width:100%;height:100%;display:block}
 <section id="tab-wish" class="page">
   <div class="card total">
     <div>使えるお金<b id="wSaved">0円</b></div>
+    <div>購入済み合計<b id="wSpent">0円</b></div>
   </div>
   <div class="card">
     <strong>欲しいものを登録</strong>
@@ -80,6 +85,7 @@ canvas{width:100%;height:100%;display:block}
     <button class="main" id="gAdd">登録する</button>
   </div>
   <div class="card"><strong>欲しいもの一覧</strong><div id="gList"></div></div>
+  <div class="card"><strong>購入済み</strong><div id="bList"></div></div>
 </section>
 
 <nav>
@@ -187,22 +193,43 @@ renderWeights();
 let wishes=load('tamarun_wishes',[]);
 function renderWishes(){
   const saved=foods.reduce((s,f)=>s+f.yen,0);
-  document.getElementById('wSaved').textContent=saved.toLocaleString()+'円';
+  const spent=wishes.filter(g=>g.bought).reduce((s,g)=>s+g.yen,0);
+  const avail=saved-spent;
+  document.getElementById('wSaved').textContent=avail.toLocaleString()+'円';
+  document.getElementById('wSpent').textContent=spent.toLocaleString()+'円';
+  const todo=wishes.filter(g=>!g.bought), done=wishes.filter(g=>g.bought);
   const list=document.getElementById('gList');
-  if(!wishes.length){list.innerHTML='<div class="empty">まだ登録がありません</div>';return}
-  list.innerHTML=wishes.map(g=>{
-    const pct=g.yen>0?Math.min(100,Math.floor(saved/g.yen*100)):100;
-    const rest=Math.max(0,g.yen-saved);
-    const msg=rest===0?'<span class="ok">買えます！🎉</span>':'あと'+rest.toLocaleString()+'円';
+  list.innerHTML=todo.length?todo.map(g=>{
+    const pct=g.yen>0?Math.max(0,Math.min(100,Math.floor(avail/g.yen*100))):100;
+    const rest=Math.max(0,g.yen-avail);
+    const can=rest===0;
+    const msg=can?'<span class="ok">買えます！🎉</span>':'あと'+rest.toLocaleString()+'円';
     return `<div class="item"><div class="name">${esc(g.name)}<small>${g.yen.toLocaleString()}円 ・ ${msg}（${pct}%）</small><div class="bar"><i style="width:${pct}%"></i></div></div>
-    <button class="del" onclick="delWish(${g.id})">✕</button></div>`}).join('');
+    ${can?`<button class="buy" onclick="buyWish(${g.id})">購入した</button>`:''}
+    <button class="del" onclick="delWish(${g.id})">✕</button></div>`}).join(''):'<div class="empty">まだ登録がありません</div>';
+  const bl=document.getElementById('bList');
+  bl.innerHTML=done.length?done.slice().reverse().map(g=>`<div class="item"><div class="name">${esc(g.name)}<small>${g.yen.toLocaleString()}円 ・ ${g.boughtDate||''}</small></div>
+    <button class="undo" onclick="undoWish(${g.id})">戻す</button>
+    <button class="del" onclick="delWish(${g.id})">✕</button></div>`).join(''):'<div class="empty">購入したものはまだありません</div>';
+}
+function buyWish(id){
+  const g=wishes.find(x=>x.id===id);if(!g)return;
+  if(!confirm(g.name+'を購入済みにして、'+g.yen.toLocaleString()+'円を使えるお金から引きますか？'))return;
+  const d=new Date();
+  g.bought=true;g.boughtDate=`${d.getMonth()+1}/${d.getDate()}`;
+  save('tamarun_wishes',wishes);renderWishes();
+}
+function undoWish(id){
+  const g=wishes.find(x=>x.id===id);if(!g)return;
+  g.bought=false;delete g.boughtDate;
+  save('tamarun_wishes',wishes);renderWishes();
 }
 function delWish(id){wishes=wishes.filter(g=>g.id!==id);save('tamarun_wishes',wishes);renderWishes()}
 document.getElementById('gAdd').onclick=()=>{
   const name=document.getElementById('gName').value.trim();
   const yen=Number(document.getElementById('gYen').value);
   if(!name||!yen||yen<=0){alert('名前と金額を入れてください');return}
-  wishes.push({id:Date.now(),name,yen});
+  wishes.push({id:Date.now(),name,yen,bought:false});
   save('tamarun_wishes',wishes);
   document.getElementById('gName').value='';document.getElementById('gYen').value='';
   renderWishes();
@@ -210,4 +237,4 @@ document.getElementById('gAdd').onclick=()=>{
 renderWishes();
 </script>
 </body>
-</html>
+<
