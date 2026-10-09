@@ -18,8 +18,14 @@ label{font-size:13px;color:#666;display:block;margin:10px 0 4px}
 input,select{display:block;width:100%;min-width:0;height:46px;margin:0;font-size:17px;line-height:1.2;padding:0 10px;border:1px solid #ccd;border-radius:10px;background:#fff;color:#222;-webkit-appearance:none;appearance:none}
 input[type=date]{text-align:left;-webkit-min-logical-width:0}
 input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
+textarea{display:block;width:100%;height:110px;font-size:13px;padding:8px;border:1px solid #ccd;border-radius:10px;margin-top:10px}
 .row{display:flex;gap:10px}.row>div{flex:1;min-width:0}
+.labelrow{display:flex;gap:8px;align-items:center}
+.labelrow select{flex:1}
+.addlabel{height:46px;padding:0 12px;border:1px solid #34a98f;background:#fff;color:#34a98f;font-size:14px;font-weight:700;border-radius:10px;white-space:nowrap}
 button.main{width:100%;margin-top:14px;padding:13px;font-size:17px;font-weight:700;color:#fff;background:#34a98f;border:0;border-radius:12px}
+button.sub{width:100%;margin-top:10px;padding:12px;font-size:16px;font-weight:700;color:#34a98f;background:#fff;border:2px solid #34a98f;border-radius:12px}
+.note{font-size:12px;color:#888;margin-top:8px;line-height:1.5}
 .item{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #eee}
 .item:last-child{border:0}
 .item .name{flex:1}.item small{color:#888;display:block}
@@ -28,7 +34,7 @@ button.main{width:100%;margin-top:14px;padding:13px;font-size:17px;font-weight:7
 .buy{border:0;background:#34a98f;color:#fff;font-size:14px;font-weight:700;border-radius:10px;padding:8px 10px;margin-left:6px;white-space:nowrap}
 .undo{border:1px solid #bbb;background:#fff;color:#666;font-size:13px;border-radius:10px;padding:6px 8px;margin-left:6px;white-space:nowrap}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;padding:12px 0;border:0;background:none;font-size:13px;color:#888}
+nav button{flex:1;padding:12px 0;border:0;background:none;font-size:12px;color:#888}
 nav button.active{color:#34a98f;font-weight:700}
 .empty{color:#999;text-align:center;padding:12px}
 .bar{height:10px;background:#e6ebef;border-radius:6px;overflow:hidden;margin-top:6px}
@@ -50,7 +56,10 @@ canvas{width:100%;height:100%;display:block}
     <strong>買わなかったものを記録</strong>
     <label>品名</label><input id="fName" placeholder="例：ポテトチップス">
     <label>ラベル</label>
-    <select id="fLabel"><option>パン</option><option>スナック</option><option>お菓子</option><option>飲み物</option><option>外食</option><option>その他</option></select>
+    <div class="labelrow">
+      <select id="fLabel"></select>
+      <button class="addlabel" id="fAddLabel">＋追加</button>
+    </div>
     <div class="row">
       <div><label>カロリー(kcal)</label><input id="fKcal" type="number" inputmode="numeric" placeholder="350"></div>
       <div><label>金額(円)</label><input id="fYen" type="number" inputmode="numeric" placeholder="200"></div>
@@ -88,23 +97,77 @@ canvas{width:100%;height:100%;display:block}
   <div class="card"><strong>購入済み</strong><div id="bList"></div></div>
 </section>
 
+<section id="tab-set" class="page">
+  <div class="card">
+    <strong>バックアップ</strong>
+    <div class="note" id="lastBackup">まだバックアップしていません</div>
+    <button class="main" id="bExport">ファイルに書き出す</button>
+    <button class="sub" id="bImportBtn">ファイルから復元する</button>
+    <input id="bFile" type="file" accept=".json,application/json" style="display:none">
+    <div class="note">書き出したファイルは「ファイル」アプリやiCloud Driveなどに保存しておくと安心です。復元すると、今のデータは上書きされます。</div>
+  </div>
+  <div class="card">
+    <strong>テキストでバックアップ</strong>
+    <div class="note">ファイルがうまく扱えないときは、こちらを使います。</div>
+    <button class="sub" id="tShow">データをテキストで表示</button>
+    <button class="sub" id="tCopy">コピーする</button>
+    <textarea id="tArea" placeholder="ここに表示・貼り付け"></textarea>
+    <button class="sub" id="tRestore">貼り付けた内容で復元する</button>
+  </div>
+  <div class="card">
+    <strong>ラベルの管理</strong>
+    <div class="note">「やめた」タブの「＋追加」からも追加できます。削除しても、過去の記録のラベルは残ります。</div>
+    <div id="labelList"></div>
+  </div>
+</section>
+
 <nav>
   <button data-tab="food" class="active">🍞 やめた</button>
   <button data-tab="weight">⚖️ 体重</button>
   <button data-tab="wish">🎁 欲しい</button>
+  <button data-tab="set">⚙️ 設定</button>
 </nav>
 
 <script>
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const DEFAULT_LABELS=['パン','スナック','お菓子','飲み物','外食','その他'];
 let foods=load('tamarun_foods',[]);
+let weights=load('tamarun_weights',[]);
+let wishes=load('tamarun_wishes',[]);
+let labels=load('tamarun_labels',DEFAULT_LABELS.slice());
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+b.dataset.tab));
   if(b.dataset.tab==='weight')renderWeights();
   if(b.dataset.tab==='wish')renderWishes();
+  if(b.dataset.tab==='set')renderSettings();
 });
+
+function renderLabels(){
+  const sel=document.getElementById('fLabel');
+  const cur=sel.value;
+  sel.innerHTML=labels.map(l=>`<option>${esc(l)}</option>`).join('');
+  if(labels.includes(cur))sel.value=cur;
+  document.getElementById('labelList').innerHTML=labels.map((l,i)=>`<div class="item"><div class="name"><span class="tag">${esc(l)}</span></div><button class="del" onclick="delLabel(${i})">✕</button></div>`).join('');
+}
+function addLabel(){
+  const v=prompt('新しいラベル名を入力してください');
+  if(v===null)return;
+  const name=v.trim();
+  if(!name)return;
+  if(labels.includes(name)){alert('そのラベルはすでにあります');document.getElementById('fLabel').value=name;return}
+  labels.push(name);save('tamarun_labels',labels);renderLabels();
+  document.getElementById('fLabel').value=name;
+}
+function delLabel(i){
+  if(labels.length<=1){alert('ラベルは1つ以上必要です');return}
+  if(!confirm('「'+labels[i]+'」を選択肢から削除しますか？（過去の記録は変わりません）'))return;
+  labels.splice(i,1);save('tamarun_labels',labels);renderLabels();
+}
+document.getElementById('fAddLabel').onclick=addLabel;
 
 function renderFoods(){
   const yen=foods.reduce((s,f)=>s+f.yen,0), kcal=foods.reduce((s,f)=>s+f.kcal,0);
@@ -116,7 +179,6 @@ function renderFoods(){
     <div class="name">${esc(f.name)}<small><span class="tag">${esc(f.label)}</span>${f.kcal}kcal ・ ${f.yen}円 ・ ${f.date}</small></div>
     <button class="del" onclick="delFood(${f.id})">✕</button></div>`).join('');
 }
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function delFood(id){foods=foods.filter(f=>f.id!==id);save('tamarun_foods',foods);renderFoods()}
 document.getElementById('fAdd').onclick=()=>{
   const name=document.getElementById('fName').value.trim();
@@ -130,9 +192,7 @@ document.getElementById('fAdd').onclick=()=>{
   ['fName','fKcal','fYen'].forEach(i=>document.getElementById(i).value='');
   renderFoods();
 };
-renderFoods();
 
-let weights=load('tamarun_weights',[]);
 const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 document.getElementById('wDate').value=todayStr();
 const shortDate=s=>Number(s.slice(5,7))+'/'+Number(s.slice(8,10));
@@ -188,9 +248,7 @@ function drawChart(){
   weights.forEach((w,i)=>{c.beginPath();c.arc(x(i),y(w.kg),4,0,Math.PI*2);c.fill()});
 }
 window.addEventListener('resize',drawChart);
-renderWeights();
 
-let wishes=load('tamarun_wishes',[]);
 function renderWishes(){
   const saved=foods.reduce((s,f)=>s+f.yen,0);
   const spent=wishes.filter(g=>g.bought).reduce((s,g)=>s+g.yen,0);
@@ -234,7 +292,66 @@ document.getElementById('gAdd').onclick=()=>{
   document.getElementById('gName').value='';document.getElementById('gYen').value='';
   renderWishes();
 };
-renderWishes();
+
+function buildBackup(){
+  return JSON.stringify({app:'tamarun',version:1,exportedAt:new Date().toISOString(),foods,weights,wishes,labels},null,1);
+}
+function markBackup(){
+  localStorage.setItem('tamarun_lastbackup',new Date().toLocaleString('ja-JP'));
+  renderSettings();
+}
+function renderSettings(){
+  const t=localStorage.getItem('tamarun_lastbackup');
+  document.getElementById('lastBackup').textContent=t?('前回のバックアップ：'+t):'まだバックアップしていません';
+  renderLabels();
+}
+async function exportFile(){
+  const json=buildBackup();
+  const name='tamarun-backup-'+todayStr()+'.json';
+  const file=new File([json],name,{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:'たまるんのバックアップ'});markBackup();return}
+    catch(e){if(e&&e.name==='AbortError')return}
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+  a.download=name;document.body.appendChild(a);a.click();a.remove();
+  markBackup();
+}
+function applyBackup(text){
+  let d;
+  try{d=JSON.parse(text)}catch(e){alert('データを読み取れませんでした。内容を確認してください');return false}
+  if(!d||d.app!=='tamarun'||!Array.isArray(d.foods)||!Array.isArray(d.weights)||!Array.isArray(d.wishes)){alert('たまるんのバックアップではないようです');return false}
+  const info='やめた '+d.foods.length+'件 / 体重 '+d.weights.length+'件 / 欲しいもの '+d.wishes.length+'件';
+  if(!confirm('今のデータを上書きして復元します。\n'+info+'\nよろしいですか？'))return false;
+  foods=d.foods;weights=d.weights;wishes=d.wishes;
+  labels=(Array.isArray(d.labels)&&d.labels.length)?d.labels:DEFAULT_LABELS.slice();
+  save('tamarun_foods',foods);save('tamarun_weights',weights);save('tamarun_wishes',wishes);save('tamarun_labels',labels);
+  renderAll();alert('復元しました');return true;
+}
+document.getElementById('bExport').onclick=exportFile;
+document.getElementById('bImportBtn').onclick=()=>document.getElementById('bFile').click();
+document.getElementById('bFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>applyBackup(String(r.result));
+  r.readAsText(f);e.target.value='';
+};
+document.getElementById('tShow').onclick=()=>{document.getElementById('tArea').value=buildBackup()};
+document.getElementById('tCopy').onclick=async()=>{
+  const ta=document.getElementById('tArea');
+  if(!ta.value)ta.value=buildBackup();
+  try{await navigator.clipboard.writeText(ta.value)}catch(e){ta.select();document.execCommand('copy')}
+  markBackup();alert('コピーしました。メモアプリなどに貼り付けて保存してください');
+};
+document.getElementById('tRestore').onclick=()=>{
+  const v=document.getElementById('tArea').value.trim();
+  if(!v){alert('復元するテキストを貼り付けてください');return}
+  applyBackup(v);
+};
+
+function renderAll(){renderLabels();renderFoods();renderWeights();renderWishes();renderSettings()}
+renderAll();
 </script>
 </body>
-<
+</html>
