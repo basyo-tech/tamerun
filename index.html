@@ -27,6 +27,8 @@ nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-t
 nav button{flex:1;padding:12px 0;border:0;background:none;font-size:13px;color:#888}
 nav button.active{color:#34a98f;font-weight:700}
 .empty{color:#999;text-align:center;padding:12px}
+.chartwrap{width:100%;height:220px}
+canvas{width:100%;height:100%;display:block}
 </style>
 </head>
 <body>
@@ -51,7 +53,19 @@ nav button.active{color:#34a98f;font-weight:700}
   <div class="card"><strong>記録一覧</strong><div id="fList"></div></div>
 </section>
 
-<section id="tab-weight" class="page"><div class="card empty">体重タブ（次のステップで作成）</div></section>
+<section id="tab-weight" class="page">
+  <div class="card">
+    <strong>体重を記録</strong>
+    <div class="row">
+      <div><label>日付</label><input id="wDate" type="date"></div>
+      <div><label>体重(kg)</label><input id="wVal" type="number" step="0.1" inputmode="decimal" placeholder="60.5"></div>
+    </div>
+    <button class="main" id="wAdd">記録する</button>
+  </div>
+  <div class="card"><strong>体重の推移</strong><div class="chartwrap"><canvas id="wChart"></canvas></div></div>
+  <div class="card"><strong>記録一覧</strong><div id="wList"></div></div>
+</section>
+
 <section id="tab-wish" class="page"><div class="card empty">欲しいものタブ（次のステップで作成）</div></section>
 
 <nav>
@@ -68,6 +82,7 @@ let foods=load('tamarun_foods',[]);
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+b.dataset.tab));
+  if(b.dataset.tab==='weight')renderWeights();
 });
 
 function renderFoods(){
@@ -95,6 +110,64 @@ document.getElementById('fAdd').onclick=()=>{
   renderFoods();
 };
 renderFoods();
+
+let weights=load('tamarun_weights',[]);
+const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+document.getElementById('wDate').value=todayStr();
+const shortDate=s=>Number(s.slice(5,7))+'/'+Number(s.slice(8,10));
+
+function renderWeights(){
+  weights.sort((a,b)=>a.date.localeCompare(b.date));
+  const list=document.getElementById('wList');
+  list.innerHTML=weights.length?weights.slice().reverse().map(w=>`<div class="item">
+    <div class="name">${w.kg}kg<small>${w.date}</small></div>
+    <button class="del" onclick="delWeight('${w.date}')">✕</button></div>`).join(''):'<div class="empty">まだ記録がありません</div>';
+  drawChart();
+}
+function delWeight(date){weights=weights.filter(w=>w.date!==date);save('tamarun_weights',weights);renderWeights()}
+document.getElementById('wAdd').onclick=()=>{
+  const date=document.getElementById('wDate').value;
+  const kg=Number(document.getElementById('wVal').value);
+  if(!date||!kg||kg<=0){alert('日付と体重を入れてください');return}
+  weights=weights.filter(w=>w.date!==date);
+  weights.push({date,kg});
+  save('tamarun_weights',weights);
+  document.getElementById('wVal').value='';
+  renderWeights();
+};
+function drawChart(){
+  const cv=document.getElementById('wChart');
+  const r=cv.getBoundingClientRect();
+  if(!r.width)return;
+  const dpr=window.devicePixelRatio||1;
+  cv.width=r.width*dpr;cv.height=r.height*dpr;
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height;c.clearRect(0,0,W,H);
+  c.font='11px sans-serif';c.textBaseline='middle';
+  if(weights.length<1){c.fillStyle='#999';c.textAlign='center';c.fillText('記録するとグラフが表示されます',W/2,H/2);return}
+  const L=38,R=14,T=14,B=26;
+  const vals=weights.map(w=>w.kg);
+  let min=Math.min(...vals),max=Math.max(...vals);
+  if(max-min<1){min-=0.5;max+=0.5}
+  const pad=(max-min)*0.15;min-=pad;max+=pad;
+  const x=i=>weights.length===1?(L+(W-L-R)/2):L+(W-L-R)*i/(weights.length-1);
+  const y=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  c.strokeStyle='#eee';c.fillStyle='#888';c.textAlign='right';c.lineWidth=1;
+  for(let k=0;k<=4;k++){
+    const v=min+(max-min)*k/4,yy=y(v);
+    c.beginPath();c.moveTo(L,yy);c.lineTo(W-R,yy);c.stroke();
+    c.fillText(v.toFixed(1),L-4,yy);
+  }
+  c.textAlign='center';
+  const step=Math.max(1,Math.ceil(weights.length/5));
+  weights.forEach((w,i)=>{if(i%step===0||i===weights.length-1)c.fillText(shortDate(w.date),x(i),H-B+14)});
+  c.strokeStyle='#34a98f';c.lineWidth=2.5;c.lineJoin='round';c.beginPath();
+  weights.forEach((w,i)=>i?c.lineTo(x(i),y(w.kg)):c.moveTo(x(i),y(w.kg)));c.stroke();
+  c.fillStyle='#34a98f';
+  weights.forEach((w,i)=>{c.beginPath();c.arc(x(i),y(w.kg),4,0,Math.PI*2);c.fill()});
+}
+window.addEventListener('resize',drawChart);
+renderWeights();
 </script>
 </body>
 </html>
